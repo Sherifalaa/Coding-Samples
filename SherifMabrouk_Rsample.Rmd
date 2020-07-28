@@ -1,0 +1,430 @@
+---
+title: "PS3"
+author: "Sherif Mabrouk"
+date: "February 24, 2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+This sample is a code written to answer questions in the textbook: An Introduction to Statistical Learning
+with Applications in R
+
+Chapter 6: Question 8
+Chapter8: Questions 3,8,9,10
+
+```{r libraries, include=FALSE}
+library(leaps)
+library(glmnet)
+library(kableExtra)
+library(ggplot2)
+library(reshape2)
+library(ISLR)
+library(tree)
+library(randomForest)
+library(dplyr)
+library(gbm)
+```
+
+Question 8 a-b
+```{r Q8a-b}
+#a
+set.seed(94)
+#generate random predictor
+x= rnorm(100)
+#generate random residuals
+e = rnorm(100)
+#b
+#set beta values
+b0<-1.8
+b1<-2.6
+b2<- 0.8
+b3<- 1.5
+#generate y
+y<-b0+b1*x+b2*x^2+b3*x^3+e
+#c (Best Subset)
+sim_df <- data.frame(x,y)
+```
+
+Question 8c-d
+```{r model_selectionFunc}
+model_sel_func <- function(method = "exhaustive", nvmax, measures = c("cp", "bic", "adjr2"), sel_measure = "adjr2"){
+  model <- regsubsets(y~x+I(x^2) + I(x^3) + I(x^4) + I(x^5) + I(x^6) + I(x^7)
+                         + I(x^8)+I(x^9)+I(x^10),data=sim_df,nvmax=10,really.big=T, method = method)
+  model_summary <- summary(model)
+  #plot 3 graphs horizontally
+   par(mfrow=c(1,3))
+   for (i in 1:length(measures)){
+  #   #plot model c_p value for different number of variables.Least value of c_p gives best model
+    plot(model_summary[[measures[i]]], xlab="Number of Variables",ylab=measures[i],type="l", main = method)
+    #
+
+    if (measures[i] != "adjr2"){
+      points(which.min(model_summary[[measures[i]]]),model_summary[[measures[i]]][which.min(model_summary[[measures[i]]])]
+             ,col="blue",cex=2,pch=20)
+    }else{
+      #plot model adj R square. HIgher adj r sqaure gives best model
+      points(which.max(model_summary[[measures[i]]]),model_summary[[measures[i]]][which.max(model_summary[[measures[i]]])],
+             col="blue",cex=2,pch=20)
+   }
+
+  }
+  coef(model,which.max(model_summary[[sel_measure]])) %>%
+    kable() %>%
+    kable_styling()
+}
+model_sel_func()
+model_sel_func(method = "forward")
+model_sel_func(method = "backward")
+
+```
+
+For the best subset method:  
+Both the plots and the estimated model show that a model with 3 variables is the optimal choice, in the fitted model, the chosen three variables are $x$. $x^2$ and $x^3$, which is the true model, also the coefficients estimates above are very close to the true coefficients values
+The Chosen model: $\widehat{y} = 1.648644 + 2.503208x + 0.897040 x^2 + 1.557462x^3$   
+
+The forward selection picked the exact same 3 variables thus same exact model with the same coefficients, while the backward selection  picked 6 variables (x, $x^3$, $x^4$, $x^6$, $x^8$, $x^10$) which is far away from the true model. However $\beta_0$, $\beta_1$ and $\beta_3$ ,the ones that are common between the defined coeeficients and the backward model, are reasonably well estimated using the backward selection model.  
+
+  
+
+  
+    
+Question 8e, Lasso
+```{r 8e_lasso}
+set.seed(94)
+#Lasso Model
+x_mat<-model.matrix(y ~ x + I(x^2) + I(x^3) + I(x^4) + I(x^5) + I(x^6) + I(x^7) +
+                      I(x^8) +I(x^9) + I(x^10), data = sim_df)[,-1]
+set.seed(94)
+cv_lasso<-cv.glmnet(x_mat,y,alpha=1)
+lasso_plot <- plot(cv_lasso)
+bestlam<-cv_lasso$lambda.min
+cat("the MSE minimizing lambda is: ", bestlam)
+reg_lasso<-glmnet(x_mat,y,alpha=1)
+
+predict(reg_lasso,s=bestlam,type="coefficients")[1:11,] %>%
+  kable() %>%
+  kable_styling()
+
+```
+Using cross validation, the lambda that minimizes the MSE is $\lambda = 0.0240496$, after using the lambda value to fit the optimal lasso model, the model was shrinked by pushing the values of the coefficients of the Xs with power 4 or higher to be equal to zero, and the variables that were left were the 3 Xs with powers 3 or less. Which is equivalent to the true model. The coeeficients are reported in the table above and they're also very close from the true coefficients
+
+Question 8f, Best Subset vs. Lasso
+```{r 8f}
+#Best Subset
+b7 = 0.35
+y2 = b0 + b7*x^7 + e
+sim_df2 = data.frame(x,y2)
+reg_best2 <- regsubsets(y2~x+I(x^2) + I(x^3) + I(x^4) + I(x^5) + I(x^6) + I(x^7) +
+                          I(x^8)+I(x^9)+I(x^10),data=sim_df2,nvmax=10,really.big = T)
+mod_summ_best2 <- summary(reg_best2)
+kable(coef(reg_best2,which.max(mod_summ_best2$adjr2)))
+
+# Lasso
+set.seed(94)
+x_mat2<-model.matrix(y2 ~ x + I(x^2) + I(x^3) + I(x^4) + I(x^5) + I(x^6) + I(x^7)+
+                       I(x^8)+I(x^9) + I(x^10), data = sim_df2)[,-1]
+set.seed(94)
+cv_lasso2 <-cv.glmnet(x_mat,y2,alpha=1)
+
+bestlam2<-cv_lasso2$lambda.min
+cat("The MSE minimizing lambda is: ", bestlam2)
+reg_lasso2<-glmnet(x_mat2,y2,alpha=1)
+predict(reg_lasso2,s=bestlam2,type="coefficients")[1:11,] %>%
+    kable() %>%
+    kable_styling()
+
+```
+
+Both models have got the term $x^7$ to be significant in the estimated models, with coeffcients that are decently close to the true coefficient value (0.356:Best Subset, 0.339: Lasso, 0.35: True value). However, both models gave a slight value to an extra term that wasn't in the true model, for the best subset method, the term $x^8$ has a very tiny value ~ 0.002. Similarly, the lasso regression gave the term $x^5$ a value ~ 0.006 and forced the other coefficients in the model to be equal to zero.
+the two methods' results are both powerful and close to each others.    
+
+
+Chapter 8
+
+Question 3  
+
+```{r Q3}
+p = seq(0,1,0.001)
+class_err <- 1 - pmax(p, 1-p)
+gini <- 2*p*(1-p)
+entropy <- - (p * log(p) + (1 - p) * log(1 - p))
+errors <- data.frame(p, class_err, gini, entropy)
+errors <- melt(errors, id.vars="p")
+
+ggplot(errors, aes(p,value, col=variable)) + 
+  geom_point() + 
+  stat_smooth() 
+
+```
+
+
+Question 8 a-c 
+```{r Q8}
+attach(Carseats)
+set.seed(94)
+#a
+test <- sample(1:nrow(Carseats), nrow(Carseats) / 4)
+Carseats_train <- Carseats[-test, ]
+Carseats_test <- Carseats[test, ]
+
+#b
+tree_carseats <- tree(Sales ~ ., data = Carseats_train)
+summary(tree_carseats)
+plot(tree_carseats)
+text(tree_carseats)
+yhat_fulltree <- predict(tree_carseats, newdata = Carseats_test)
+MSE_fulltree <- mean((yhat_fulltree - Carseats_test$Sales)^2)
+cat("The MSE for the full tree is: ", MSE_fulltree)
+cat("\n")
+
+#c
+set.seed(9)
+cv_carseats <- cv.tree(tree_carseats)
+plot(cv_carseats$size, cv_carseats$dev, type = "b")
+
+set.seed(94)
+prune_carseats <- prune.tree(tree_carseats, best = 9)
+plot(prune_carseats)
+text(prune_carseats)
+
+yhat_prunedtree <- predict(prune_carseats, newdata = Carseats_test)
+MSE_prunedtree <- mean((yhat_prunedtree - Carseats_test$Sales)^2)
+cat("The MSE for the pruned tree is: ", MSE_prunedtree)
+```
+
+Minimum test error is at the tree with size 9, and the tree with size 9 has a slightly lower MSE (6.58) than the full tree which has an MSE equal to 6.98.  
+
+
+Question 8d, Bagging  
+
+```{r 8d}
+#Bagging
+set.seed(94)
+bag_carseats <- randomForest(Sales~ ., data = Carseats_train, mtry = 10, importance = TRUE)
+yhat_bag <- predict(bag_carseats, newdata = Carseats_test)
+MSE_bag <- mean((yhat_bag - Carseats_test$Sales)^2)
+cat("The MSE for the bagged tree is: ", MSE_bag)
+importance(bag_carseats)
+```
+The 3 most important variables in this bagging given their contribution in the reduction of the MSE are ShelveLoc, Price and CompPrice
+And the MSE(3.58) decreased by almost 50% from the origianl full tree MSE estimate
+
+Question 8e, Random Forrest
+```{r 8e}
+#Random Forrest
+set.seed(94)
+num_vars <- seq(1, 10,1)
+MSES_rf <- rep(NA, length(num_vars))
+for (i in 1:length(num_vars)){
+  rf_carseats <- randomForest(Sales~ ., data = Carseats_train, mtry = num_vars[i],
+                              importance = TRUE)
+  yhat <- predict(rf_carseats, newdata = Carseats_test)
+  MSES_rf[i] <- mean((yhat - Carseats_test$Sales)^2)
+}
+rf_carseats_def <- randomForest(Sales~ ., data = Carseats_train, importance = TRUE)
+importance(rf_carseats_def)
+num_vars_mse_df <- data.frame(num_vars, MSES_rf)
+ggplot(num_vars_mse_df, aes(num_vars,MSES_rf)) + 
+  geom_point()
+
+```
+The 3 most important variables using random forrests according to their contribution to the reduction in the MSE are ShelveLoc, Price and Age
+
+As the number of variables considered at each split starts increasing from 1, the MSE decreases so fast at the beginning, then continue to decrease but ata decreasing rate till we reach the optimal number of variables, where after we increase an additional variable afterwards it wither doesn't affect or increase the MSE. Considering 7 variables at each split is the optimal in our case and has an MSE that is almost equal to using the whole set of predictors.  
+
+Question 9 a-c
+```{r  9a-c}
+#a
+set.seed(94)
+attach(OJ)
+train <- sample(1:nrow(OJ), 800)
+OJ_train <- OJ[train,]
+OJ_test <- OJ[-train,]
+#b
+tree_OJ <- tree(Purchase ~ ., data = OJ_train)
+summ_tree_OJ_full <- summary(tree_OJ)
+class_err <- 100*summ_tree_OJ_full$misclass/nrow(OJ_train)
+cat("Classification error rate = ", class_err[1] , "%") 
+cat("\n")
+cat("the number of terminal nodes is :", summ_tree_OJ_full$size)
+cat("\n")
+#c
+tree_OJ
+```
+  
+
+The chosen terminal node is: 11) PriceDiff > 0.05 110  148.80 CH ( 0.59091 0.40909 ) *
+ 
+ Is the price difference greater than 0.05? This is the split citerion, 110 observation satisfied the split condition with a deviance of 148.8 and an overall prediction for the branch of CH. 59.1% of the observations took the label CH and the remaining 40.9% took other values.  
+ 
+Question 9d 
+```{r 9d}
+#d (tree plot)
+plot(tree_OJ)
+text(tree_OJ)
+
+```
+ First, the observations are splitted according to whether or not their LoyalCH value is smaller than 0.50395, if yes(the left side of the tree) then observations are splitted again according to the Loyal CH value, this time the observations are splitted between those who have Loyal CH value less than 0.276142 and those who have a greter value than 0.276142. If they have a LoyalCH value that is less than 0.276142 then it's a terinal node and these observations will be directly classified as MM. If they have a LoyalCH value that is greater than 0.276142, then they are splitted further according to their price Diff value. If they have a price Diff value that is more than 0.05, then they are going to be classified as CH. If they have a Price Diff value that is less than 0.05, then they are classified to be MM.   
+  
+Back to the start of the tree, Given that observations have LoyalCH value that is more than 0.50395, if their LoyalCH value is more than 0.764572, then they're classified to be CH. if their LoyalCH value is less than 0.764572 and their ListPriceDiff value is greater than 0.235, then they're classified as CH. Otherwise, if their LoyalCH value is less than 0.764572 and their ListPriceDiff value is less than 0.235 then they're splitted according to PCtDiscMM, if it's less than 0.196197 then they're classified as CH. If not(PCtDiscMM value is more than 0.196197), then they're classified as MM.  
+
+Question 9e
+```{r 9e}
+#e
+set.seed(94)
+yhat_cl_full <- predict(tree_OJ, newdata = OJ_test, type = "class")
+conf_mat_full <- table(yhat_cl_full, OJ_test$Purchase)
+conf_mat_df <- data.frame(table(yhat_cl_full, OJ_test$Purchase))
+conf_mat_full
+Test_error_rate_full <- 100*(conf_mat_df$Freq[conf_mat_df$yhat_cl == "CH" &
+                                                conf_mat_df$Var2 == "MM"] +
+                               conf_mat_df$Freq[conf_mat_df$yhat_cl == "MM" & 
+                                                  conf_mat_df$Var2 == "CH"]) /
+                        sum(conf_mat_df$Freq)
+cat("The test error rate is:", round(Test_error_rate_full,2), "%")
+```
+
+
+Question 9f
+```{r 9f}
+#f
+cv_OJtree <- cv.tree(tree_OJ, FUN = prune.misclass)
+size_dev_df <- data.frame(cv_OJtree$size, cv_OJtree$dev)
+size_dev_df
+```
+
+The lowest error rate happens at both tree of size 7.  
+
+Question 9g
+```{r 9g}
+#g (plot)
+ggplot(size_dev_df, aes(cv_OJtree.size,cv_OJtree.dev)) + 
+  geom_point()
+
+```
+Question 9h)  
+The optimal size is 7 as clarified above.  
+
+Question 9 i-j
+```{r 9i-j}
+#i
+set.seed(94)
+prune_OJ <- prune.tree(tree_OJ, best = 5)
+summ_tree_OJ_pr <- summary(prune_OJ)
+#j
+summ_tree_OJ_full$misclass
+summ_tree_OJ_pr$misclass
+```
+The pruned tree has 32 more misclassified observations than the full tree, which accounts for an increase in the misclassification error rate by 4%.  
+
+Question 9k
+```{r 9k}
+#k
+set.seed(94)
+yhat_pr_OJ <- predict(prune_OJ, newdata = OJ_test, type = "class")
+conf_mat_pr <- table(yhat_pr_OJ, OJ_test$Purchase)
+conf_mat_df_pr <- data.frame(table(yhat_pr_OJ, OJ_test$Purchase))
+Test_error_rate_pr <- 100*(conf_mat_df_pr$Freq[conf_mat_df_pr$yhat_pr_OJ == "CH" 
+                                               & conf_mat_df_pr$Var2 == "MM"] +
+                             conf_mat_df_pr$Freq[conf_mat_df_pr$yhat_pr_OJ == "MM" &
+                                                   conf_mat_df_pr$Var2 == "CH"]) /  
+                             sum(conf_mat_df_pr$Freq)
+conf_mat_pr
+cat(c("The misclassification error rate for the pruned tree is: ", 
+      round(Test_error_rate_pr,2), "%"))
+cat("\n")
+cat(c("The misclassification error rate for the full tree is: ", 
+      round(Test_error_rate_full,2), "%"))
+```
+The full tree has a lower test error rate: 16.67% versus 21.11% for the pruned tree.  
+
+Question 10 a-c
+```{r 10}
+#a
+Hitters <- Hitters[!is.na(Hitters$Salary),] 
+Hitters$Salary <- log(Hitters$Salary)
+#b
+set.seed(94)
+Htrain <- sample(nrow(Hitters), 200)
+Hitters_train <- Hitters[Htrain,]
+Hitters_test <- Hitters[-Htrain,]
+#c
+set.seed(94)
+pows <- seq(-10, -0.2, by = 0.1)
+lambdas <- 10^pows
+train_err <- rep(NA, length(lambdas))
+for (i in 1:length(lambdas)) {
+    boost_hitters <- gbm(Salary ~ ., data = Hitters_train, distribution = "gaussian",
+                         n.trees = 1000, shrinkage = lambdas[i])
+    pred_train <- predict(boost_hitters, Hitters_train, n.trees = 1000)
+    train_err[i] <- mean((pred_train - Hitters_train$Salary)^2)
+}
+plot(lambdas, train_err, type = "b", xlab = "Shrinkage(lambdas)", ylab = "Training MSE")
+```
+
+Question 10d
+
+```{r 10d}
+#d
+set.seed(94)
+test_err <- rep(NA, length(lambdas))
+for (i in 1:length(lambdas)) {
+    boost_hitters <- gbm(Salary ~ ., data = Hitters_train, distribution = "gaussian",
+                         n.trees = 1000, shrinkage = lambdas[i])
+    yhat_boost <- predict(boost_hitters, Hitters_test, n.trees = 1000)
+    test_err[i] <- mean((yhat_boost - Hitters_test$Salary)^2)
+}
+plot(lambdas, test_err, type = "b", xlab = "Shrinkage(lambdas)", ylab = "Test MSE")
+boost_mse <- min(test_err)
+min_lambda <- lambdas[which.min(test_err)]
+```
+
+Question 10e
+```{r 10e}
+#e
+lin_fit <- lm(Salary ~ ., data = Hitters_train)
+lin_pred <- predict(lin_fit, Hitters_test)
+lin_mse <- mean((lin_pred - Hitters_test$Salary)^2)
+
+
+x <- model.matrix(Salary ~ ., data = Hitters_train)
+x_test <- model.matrix(Salary ~ ., data = Hitters_test)
+y <- Hitters_train$Salary
+ridge_fit <- glmnet(x, y, alpha = 0)
+ridge_pred <- predict(ridge_fit, s = 0.01, newx = x_test)
+ridge_mse <- mean((ridge_pred - Hitters_test$Salary)^2)
+
+cat("Linear Regression's MSE: ", round(lin_mse, 3))
+cat("\n")
+cat("Ridge_MSE: ", round(ridge_mse,3))
+cat("\n")
+cat("Boosting MSE: ", round(boost_mse,3))
+```
+Boosting has the lowest MSE amongst the three methods(0.291), almost half the MSE of both linear and ridge regression(0.519&0.513).  
+
+
+Question 10f  
+
+```{r 10f}
+set.seed(94)
+boost_hitters <- gbm(Salary ~ ., data = Hitters_train, distribution = "gaussian",
+                     n.trees = 1000, shrinkage = min_lambda)
+summary(boost_hitters)
+```
+As both the graph and the table show, CAtBat, CRBI and CRuns are the most important variables for the boosting method.  
+
+Question 10g
+```{r 10g}
+set.seed(94)
+bag_hitters <- randomForest(Salary ~ ., data = Hitters_train, mtry = 19, ntree = 500)
+yhat_bag_Hit <- predict(bag_hitters, newdata = Hitters_test)
+bag_MSE <- mean((yhat_bag_Hit - Hitters_test$Salary)^2)
+cat("Bagging MSE: ", round(bag_MSE,3))
+cat("\n")
+cat("Boosting MSE: ", round(boost_mse,3))
+```
+
+Bagging has a slighly lower MSE than Boosting (0.223 vs. 0.291).
